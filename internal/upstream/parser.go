@@ -14,7 +14,7 @@ type Event struct{
 
 // reads raw SSE text and returns a slice of parsed events.
 
-func ParsedEvents(raw string) []Event{
+func ParseEvents(raw string) []Event{
   var events []Event
   var current Event
 
