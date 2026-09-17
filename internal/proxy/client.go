@@ -148,3 +148,17 @@ func (c *Client) snapshot() ClientSnapshot{
   }
 
 }
+
+
+func (c *Client) Done() <-chan struct{}   { return c.done }
+func (c *Client) Notify() <-chan struct{} { return c.notify }
+
+func (c *Client) Pop() (string, bool) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.ring.pop()
+}
+
+func (c *Client) Disconnect(reason dropReason) {
+    c.disconnect(reason)
+}

@@ -16,7 +16,7 @@ import(
 type BrokerMetrics struct{
   TotalConnections atomic.Int64
   ActiveClients atomic.Int64
-  TotalEventsReceieved atomic.Int64
+  TotalEventsReceived atomic.Int64
   TotalEventsDelivered atomic.Int64
   TotalEventsDropped atomic.Int64
   UpstreamReconnects atomic.Int64
@@ -30,7 +30,7 @@ type Broker struct{
   mu sync.RWMutex
   policy *backpressurePolicy
   logger *slog.Logger
-  Metrics BrokerMetrics // why not *?
+  Metrics BrokerMetrics 
   register chan *Client
   unregister chan *Client
 }
@@ -47,7 +47,6 @@ func NewBroker(cfg *config.Config, up *upstream.Client, logger *slog.Logger,
     register: make(chan *Client, 64),
     unregister: make(chan *Client, 64),
   }
-  // we used to do b.run() why not anymore?
 }
 
 func (b *Broker) Run(ctx context.Context){
@@ -66,13 +65,12 @@ func (b *Broker) Run(ctx context.Context){
       
     case client := <-b.unregister:
       b.mu.Lock()
-      delete(b.clients,client.id) // why no if exists like the past one
+      delete(b.clients,client.id) 
       b.mu.Unlock()
       b.Metrics.ActiveClients.Add(-1)
       b.logger.Info("client disconnected client_id", client.id,"delivered",client.metrics.Delivered.Load(),"dropped",client.metrics.Dropped.Load(),"uptime",time.Since(client.metrics.ConnectedAt).Round(time.Millisecond),)
-      //explain all of it, isn't it suppose to be ClientMetrics.Delieverd?
     case event := <-b.upstream.Event():
-      b.Metrics.TotalEventsReceieved.Add(1)
+      b.Metrics.TotalEventsReceived.Add(1)
       b.fanOut(event)
     }
   }
