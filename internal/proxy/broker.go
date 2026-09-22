@@ -100,7 +100,7 @@ func (b *Broker) fanOut(event upstream.Event){
   //disconnecting outside the read lock to avoid deadlock & lock ordering issues
   for _,client := range toDisconnect{
     b.Metrics.TotalEventsDropped.Add(1)
-    client.disconnect(dropReasonBufferFull)
+    client.disconnect(DropReasonBufferFull)
     b.unregister <- client
   }
 }
@@ -124,7 +124,7 @@ func (b *Broker) ForceDisconnect(id string) bool{
   if !ok{
     return false
   }
-  client.disconnect(dropReasonForced)
+  client.disconnect(DropReasonForced)
   b.unregister <- client
   return true
 }

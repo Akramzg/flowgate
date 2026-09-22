@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-type dropReason string
+type DropReason string
 
 const(
-  dropReasonBufferFull dropReason = "buffer_full"
-  dropReasonWriteError dropReason = "write_error"
-  dropReasonContextDone dropReason = "context_done"
-  dropReasonForced dropReason = "forced_by_admin"
+  DropReasonBufferFull DropReason = "buffer_full"
+  DropReasonWriteError DropReason = "write_error"
+  DropReasonContextDone DropReason = "context_done"
+  DropReasonForced DropReason = "forced_by_admin"
 )
 
 
@@ -49,7 +49,7 @@ func (r *ringBuffer) pop() (string, bool){
     return "",false
   }
   msg := r.buf[r.tail]
-  r.buf[r.tail]="" // can you explain this part, like what does the GC collect? and won't this make a gap?
+  r.buf[r.tail]=""
   r.tail=(r.tail+1)%r.capacity 
   r.count--
   return msg,true
@@ -64,7 +64,7 @@ type ClientMetrics struct{
   Reconnects atomic.Int64
   ConnectedAt time.Time
   DisconnectedAt atomic.Pointer[time.Time] //why not time.Time?
-  DropReason atomic.Pointer[dropReason]
+  DropReason atomic.Pointer[DropReason]
 }
 
 type Client struct{
@@ -105,7 +105,7 @@ func (c *Client) push(msg string){
   }
 }
 
-func (c *Client) disconnect(reason dropReason){ // explain this
+func (c *Client) disconnect(reason DropReason){
   c.closeOnce.Do(func(){
     now := time.Now()
     c.metrics.DisconnectedAt.Store(&now)
@@ -159,6 +159,6 @@ func (c *Client) Pop() (string, bool) {
     return c.ring.pop()
 }
 
-func (c *Client) Disconnect(reason dropReason) {
+func (c *Client) Disconnect(reason DropReason) {
     c.disconnect(reason)
 }
