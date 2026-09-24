@@ -17,10 +17,11 @@ type Handler struct{
   broker *proxy.Broker
   cfg *config.Config
   logger *slog.Logger
+  startTime time.Time
 }
 
 func NewHandler(broker *proxy.Broker, cfg *config.Config, logger *slog.Logger) *Handler{
-  return &Handler{broker: broker, cfg: cfg, logger: logger}
+  return &Handler{broker: broker, cfg: cfg, logger: logger, startTime: time.Now()}
 }
 
 func (h *Handler) Register(mux *http.ServeMux){
@@ -107,7 +108,7 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":         "ok",
 		"active_clients": h.broker.Metrics.ActiveClients.Load(),
-		"uptime":         time.Since(startTime).String(),
+		"uptime":         time.Since(h.startTime).String(),
 	})
 }
 
@@ -213,6 +214,4 @@ func sanitizeAddr(addr string) string {
 	}
 	return addr
 }
-
-var startTime = time.Now()
 

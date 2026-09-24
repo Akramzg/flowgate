@@ -13,7 +13,7 @@ run-mock:
 	go run $(MOCK_CMD)
 
 run: build
-	UPSTREAM_URL=http://localhost:9000/events ./$(BINARY)
+	UPSTREAM_URL=http://localhost:9000/events exec ./$(BINARY)
 
 vet:
 	go vet ./...

@@ -23,6 +23,10 @@ type BrokerMetrics struct{
 }
 
 
+// Lock ordering: b.mu must always be acquired before c.mu (Client.mu).
+// Never acquire Client.mu first and then attempt to acquire b.mu.
+// Violation of this order will deadlock.
+
 type Broker struct{
   cfg *config.Config
   upstream *upstream.Client
@@ -61,14 +65,21 @@ func (b *Broker) Run(ctx context.Context){
       b.mu.Unlock()
       b.Metrics.ActiveClients.Add(1)
       b.Metrics.TotalConnections.Add(1)
-      b.logger.Info("client connected client_id",client.id,"remote_addr",client.remoteAddr,"active",b.Metrics.ActiveClients.Load(),)
+      b.logger.Info("client connected", "client_id", client.id, "remote_addr", client.remoteAddr, "active", b.Metrics.ActiveClients.Load())
       
     case client := <-b.unregister:
       b.mu.Lock()
-      delete(b.clients,client.id) 
+      if _, exists := b.clients[client.id]; exists {
+        delete(b.clients, client.id)
+        b.Metrics.ActiveClients.Add(-1)
+        b.logger.Info("client disconnected",
+          "client_id", client.id,
+          "delivered", client.metrics.Delivered.Load(),
+          "dropped", client.metrics.Dropped.Load(),
+          "uptime", time.Since(client.metrics.ConnectedAt).Round(time.Millisecond),
+        )
+      }
       b.mu.Unlock()
-      b.Metrics.ActiveClients.Add(-1)
-      b.logger.Info("client disconnected client_id", client.id,"delivered",client.metrics.Delivered.Load(),"dropped",client.metrics.Dropped.Load(),"uptime",time.Since(client.metrics.ConnectedAt).Round(time.Millisecond),)
     case event := <-b.upstream.Event():
       b.Metrics.TotalEventsReceived.Add(1)
       b.fanOut(event)
@@ -77,32 +88,48 @@ func (b *Broker) Run(ctx context.Context){
 }
 
 
-func (b *Broker) fanOut(event upstream.Event){
-  msg := event.Data
-  if event.Type != ""{
-    msg = fmt.Sprintf("[%s] %s", event.Type, event.Data)
-  }
+func (b *Broker) fanOut(event upstream.Event) {
+	msg := event.Data
+	if event.Type != "" {
+		msg = fmt.Sprintf("[%s] %s", event.Type, event.Data)
+	}
 
-  var toDisconnect []*Client
-  b.mu.RLock()
-  for _, client := range b.clients{
-    client.mu.Lock()
-    shouldDisconnect := b.policy.apply(client,msg)
-    if shouldDisconnect{
-      toDisconnect = append(toDisconnect, client)
-    }else{
-      b.Metrics.TotalEventsDelivered.Add(1)
-      client.metrics.Delivered.Add(1)
-    }
-    client.mu.Unlock()
-  }
-  b.mu.RUnlock()
-  //disconnecting outside the read lock to avoid deadlock & lock ordering issues
-  for _,client := range toDisconnect{
-    b.Metrics.TotalEventsDropped.Add(1)
-    client.disconnect(DropReasonBufferFull)
-    b.unregister <- client
-  }
+	var toDisconnect []*Client
+
+	b.mu.RLock()
+	for _, client := range b.clients {
+		client.mu.Lock()
+		shouldDisconnect := b.policy.apply(client, msg)
+		if shouldDisconnect {
+			toDisconnect = append(toDisconnect, client)
+		} else {
+			b.Metrics.TotalEventsDelivered.Add(1)
+			client.metrics.Delivered.Add(1)
+		}
+		client.mu.Unlock()
+	}
+	b.mu.RUnlock()
+
+	if len(toDisconnect) == 0 {
+		return
+	}
+
+	b.mu.Lock()
+	for _, client := range toDisconnect {
+		if _, exists := b.clients[client.id]; exists {
+			delete(b.clients, client.id)
+			b.Metrics.ActiveClients.Add(-1)
+			b.Metrics.TotalEventsDropped.Add(1)
+			client.disconnect(DropReasonBufferFull)
+			b.logger.Error("client buffer full — disconnected",
+				"client_id", client.id,
+				"remote_addr", client.remoteAddr,
+				"delivered", client.metrics.Delivered.Load(),
+				"dropped", client.metrics.Dropped.Load(),
+			)
+		}
+	}
+	b.mu.Unlock()
 }
 
 func (b *Broker) RegisterClient(id, remoteAddr string) *Client{
